@@ -4,13 +4,13 @@
 **Date:** July 5, 2025  
 **Handle:** @lombardweb
 
----
+
 
 ## Python FastAPI Telemetry API
 
 This Python FastAPI interface securely transfers telemetry data from your Android APK users to a Python FastAPI server.
 
----
+
 
 ## 📦 Setup Instructions
 
@@ -24,7 +24,7 @@ This Python FastAPI interface securely transfers telemetry data from your Androi
    sudo apt install openssl
    ```
 
----
+
 
 ### 2️⃣ Install Dependencies
 
@@ -34,7 +34,7 @@ The setup script will install required Python packages, but you can install them
 pip install fastapi uvicorn python-jose[cryptography] passlib[bcrypt] python-multipart sqlalchemy
 ```
 
----
+
 
 ### 3️⃣ Create Project Directory
 
@@ -44,14 +44,12 @@ cd telemetry_server
 mkdir logs certs
 ```
 
----
 
 ### 4️⃣ Save Scripts
 
 - Place `main.py` and `setup_telemetry_service.py` in the `telemetry_server` directory.
 - Make sure `main.py` includes the correct password in the `USERS` list.
 
----
 
 ### 5️⃣ Run the Setup Script
 
@@ -73,7 +71,7 @@ python3 setup_telemetry_service.py
 
   - If you choose **standalone**, it simply runs `main.py`.
 
----
+
 
 ## 🔌 Manage the Service (if installed as systemd)
 
@@ -94,7 +92,7 @@ cat logs/telemetry.log
 sudo systemctl enable telemetry.service
 ```
 
----
+
 
 ## ✅ Check the Status Endpoint
 
@@ -106,7 +104,7 @@ https://your-server-ip:8000/status
 
 - Returns: `{"status": "online"}` or `{"status": "offline", "error": "..."}`.
 
----
+
 
 ## 📲 Update the Android App
 
@@ -118,7 +116,7 @@ Include basic authentication credentials:
 val credentials = Credentials.basic("admin", "your_secure_password")
 ```
 
----
+
 
 ## ⚙️ Features
 
@@ -137,7 +135,7 @@ val credentials = Credentials.basic("admin", "your_secure_password")
 - **SQLite Storage**: Saves telemetry in a local database (`telemetry.db`).
 - **Privacy Compliance**: Uses `device_uuid` to anonymize users — be sure to update your privacy policy.
 
----
+
 
 ## 🧪 Example Usage
 
@@ -174,7 +172,7 @@ curl -k https://your-server-ip:8000/status
 sqlite3 telemetry.db "SELECT * FROM telemetry;"
 ```
 
----
+
 
 ## ⚡ Notes
 
@@ -204,7 +202,7 @@ sqlite3 telemetry.db "SELECT * FROM telemetry;"
 - **Testing:**  
   Use `curl -k` for self-signed certificates or configure OkHttp to trust self-signed certs in your Android app.
 
----
+
 
 ## 📊 Example Telemetry Payload
 
@@ -258,6 +256,6 @@ Below is an example of the telemetry data structure stored in `telemetry.db`:
 }
 ```
 
----
+
 
 **© Thibaut Lombard — @lombardweb**
