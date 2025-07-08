@@ -1,37 +1,61 @@
-import sqlite3
 import os
 import logging
-import ssl
-import http.server
-import socketserver
+import json
+import re
 from fastapi import FastAPI, HTTPException, Depends, status, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field, validator
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, Float, JSON, Index
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from urllib.parse import unquote
 from html import escape
-import json
-import re
 from datetime import datetime
-from http import HTTPStatus
-from wsgiref.simple_server import make_server
+
+# Read configuration
+CONFIG_FILE = "config.json"
+CREDENTIALS_FILE = "credentials.json"
+use_https = True
+port = 8000
+enable_logging = True
+
+if os.path.exists(CONFIG_FILE):
+    with open(CONFIG_FILE, "r") as f:
+        config = json.load(f)
+        use_https = config.get("use_https", True)
+        port = config.get("port", 8000)
+        enable_logging = config.get("enable_logging", True)
+else:
+    logging.warning("Config file not found; using defaults: use_https=True, port=8000, enable_logging=True")
 
 # Configure logging
-logging.basicConfig(
-    filename="logs/telemetry.log",
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+if enable_logging:
+    logging.basicConfig(
+        filename="logs/telemetry.log",
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 logger = logging.getLogger(__name__)
+
+# Read credentials
+USERS = {}
+if os.path.exists(CREDENTIALS_FILE):
+    try:
+        with open(CREDENTIALS_FILE, "r") as f:
+            creds = json.load(f)
+            USERS = {creds["username"]: creds["hashed_password"]}
+    except (IOError, json.JSONDecodeError) as e:
+        logger.error(f"Failed to load credentials: {e}")
+        raise RuntimeError(f"Failed to load credentials: {e}")
+else:
+    logger.error("Credentials file not found")
+    raise RuntimeError("Credentials file not found")
 
 # FastAPI app
 app = FastAPI()
@@ -44,7 +68,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://your-app-domain.com"],  # Whitelist your Android app's domain
+    allow_origins=["https://lombard-web-services.com"],  # Updated with your domain
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
@@ -55,7 +79,8 @@ app.add_middleware(
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; object-src 'none';"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    if use_https:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
@@ -112,6 +137,13 @@ class Telemetry(Base):
 Base.metadata.create_all(bind=engine)
 
 # Pydantic models for strict validation
+def sanitize_string(cls, v):
+    """Sanitize string fields to prevent injection."""
+    v = unquote(escape(v))
+    if re.search(r'[<>;{}]', v):
+        raise ValueError("Invalid characters detected")
+    return v
+
 class DeviceInfo(BaseModel):
     device_model: str = Field(..., max_length=100)
     manufacturer: str = Field(..., max_length=100)
@@ -125,11 +157,8 @@ class DeviceInfo(BaseModel):
     timezone: str = Field(..., max_length=50)
 
     @validator("device_model", "manufacturer", "device_name", "brand", "hardware", "cpu_abi", "locale", "timezone")
-    def sanitize_string(cls, v):
-        v = unquote(escape(v))  # Decode URL and escape HTML
-        if re.search(r'[<>;{}]', v):  # Block dangerous characters
-            raise ValueError("Invalid characters detected")
-        return v
+    def validate_device_info(cls, v):
+        return sanitize_string(cls, v)
 
 class NetworkInfo(BaseModel):
     network_type: str = Field(..., max_length=20)
@@ -137,11 +166,8 @@ class NetworkInfo(BaseModel):
     proxy: str = Field(..., max_length=100)
 
     @validator("network_type", "proxy")
-    def sanitize_string(cls, v):
-        v = unquote(escape(v))
-        if re.search(r'[<>;{}]', v):  # Block dangerous characters
-            raise ValueError("Invalid characters detected")
-        return v
+    def validate_network_info(cls, v):
+        return sanitize_string(cls, v)
 
 class AppInfo(BaseModel):
     app_version: str = Field(..., max_length=20)
@@ -151,11 +177,8 @@ class AppInfo(BaseModel):
     device_uuid: str = Field(..., max_length=36)
 
     @validator("app_version", "package_name", "device_uuid")
-    def sanitize_string(cls, v):
-        v = unquote(escape(v))
-        if re.search(r'[<>;{}]', v):
-            raise ValueError("Invalid characters detected")
-        return v
+    def validate_app_info(cls, v):
+        return sanitize_string(cls, v)
 
 class UsageData(BaseModel):
     timestamp: str = Field(..., max_length=30)
@@ -165,22 +188,16 @@ class UsageData(BaseModel):
     js_error: str = Field(..., max_length=200)
 
     @validator("screen_view", "event", "js_error")
-    def sanitize_string(cls, v):
-        v = unquote(escape(v))
-        if re.search(r'[<>;{}]', v):
-            raise ValueError("Invalid characters detected")
-        return v
+    def validate_usage_data(cls, v):
+        return sanitize_string(cls, v)
 
 class WebviewStorage(BaseModel):
     local_storage: Dict[str, Any]
     cookies: str = Field(..., max_length=500)
 
     @validator("cookies")
-    def sanitize_string(cls, v):
-        v = unquote(escape(v))
-        if re.search(r'[<>;{}]', v):
-            raise ValueError("Invalid characters detected")
-        return v
+    def validate_webview_storage(cls, v):
+        return sanitize_string(cls, v)
 
 class DeviceCapabilities(BaseModel):
     orientation: str = Field(..., max_length=20)
@@ -191,11 +208,8 @@ class DeviceCapabilities(BaseModel):
     battery_level: int = Field(..., ge=0, le=100)
 
     @validator("orientation")
-    def sanitize_string(cls, v):
-        v = unquote(escape(v))
-        if re.search(r'[<>;{}]', v):
-            raise ValueError("Invalid characters detected")
-        return v
+    def validate_device_capabilities(cls, v):
+        return sanitize_string(cls, v)
 
 class TelemetryData(BaseModel):
     device_info: DeviceInfo
@@ -208,15 +222,13 @@ class TelemetryData(BaseModel):
 # Basic auth setup
 security = HTTPBasic()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-USERS = {
-    "admin": pwd_context.hash("your_secure_password")  # Replace with strong password
-}
 
 # Dependency for basic authentication
 def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
     correct_password = USERS.get(credentials.username)
     if not correct_password or not pwd_context.verify(credentials.password, correct_password):
-        logger.warning(f"Authentication failed for user: {credentials.username}")
+        if enable_logging:
+            logger.warning(f"Authentication failed for user: {credentials.username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -233,7 +245,7 @@ def get_db():
         db.close()
 
 @app.post("/telemetry")
-@limiter.limit("10/minute")  # 10 requests per minute per IP
+@limiter.limit("10/minute")
 async def receive_telemetry(request: Request, data: TelemetryData, user: str = Depends(verify_credentials), db: Session = Depends(get_db)):
     try:
         client_ip = request.client.host or "unknown"
@@ -275,97 +287,36 @@ async def receive_telemetry(request: Request, data: TelemetryData, user: str = D
 
         db.add(telemetry)
         db.commit()
-        logger.info(f"Telemetry stored for device_uuid: {device_uuid}, IP: {client_ip}")
+        if enable_logging:
+            logger.info(f"Telemetry stored for device_uuid: {device_uuid}, IP: {client_ip}")
         return {"status": "success", "message": "Telemetry data stored"}
     except Exception as e:
         db.rollback()
-        logger.error(f"Error storing telemetry: {str(e)}")
+        if enable_logging:
+            logger.error(f"Error storing telemetry: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error storing telemetry: {str(e)}")
 
 @app.get("/status")
 @limiter.limit("5/minute")
 async def get_status(request: Request):
     try:
-        with socket.create_connection(("localhost", 8000), timeout=2):
+        if enable_logging:
             logger.info("Server status: online")
-            return {"status": "online"}
+        return {"status": "online"}
     except Exception as e:
-        logger.error(f"Server status: offline - {str(e)}")
+        if enable_logging:
+            logger.error(f"Server status: offline - {str(e)}")
         return {"status": "offline", "error": str(e)}
 
-# HTTPS server setup with Python's http.server
-class FastAPIHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.handle_request()
-
-    def do_POST(self):
-        self.handle_request()
-
-    def handle_request(self):
-        try:
-            # Extract path and method
-            path = self.path
-            method = self.command
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else ""
-
-            # Create a mock request for FastAPI
-            scope = {
-                "type": "http",
-                "method": method,
-                "path": path,
-                "headers": [(k.lower().encode(), v.encode()) for k, v in self.headers.items()],
-                "client": (self.client_address[0], self.client_address[1]),
-                "query_string": b"",
-                "body": body.encode() if body else b""
-            }
-
-            # Process request with FastAPI
-            from starlette.testclient import TestClient
-            client = TestClient(app)
-            response = client.request(method, path, headers=dict(self.headers), data=body)
-
-            # Send response
-            self.send_response(response.status_code)
-            for key, value in response.headers.items():
-                self.send_header(key, value)
-            self.end_headers()
-            self.wfile.write(response.body)
-        except Exception as e:
-            logger.error(f"Error handling request: {str(e)}")
-            self.send_response(HTTPStatus.INTERNAL_SERVER_ERROR)
-            self.end_headers()
-            self.wfile.write(b"Internal Server Error")
-
 if __name__ == "__main__":
-    # Check for Let's Encrypt certificates
-    letsencrypt_path = "/etc/letsencrypt/live"
+    import uvicorn
     cert_file = os.path.join("certs", "cert.pem")
     key_file = os.path.join("certs", "key.pem")
-
-    if os.path.exists(letsencrypt_path):
-        domains = [d for d in os.listdir(letsencrypt_path) if os.path.isdir(os.path.join(letsencrypt_path, d))]
-        if domains:
-            domain = domains[0]
-            cert_file = os.path.join(letsencrypt_path, domain, "fullchain.pem")
-            key_file = os.path.join(letsencrypt_path, domain, "privkey.pem")
-            logger.info(f"Using Let's Encrypt certificates: {cert_file}, {key_file}")
-        else:
-            logger.warning("No Let's Encrypt certificates found; using default certificates")
+    if use_https:
+        if not (os.path.exists(cert_file) and os.path.exists(key_file)):
+            if enable_logging:
+                logger.error("No valid certificates found; please provide certificates for HTTPS")
+            raise RuntimeError("SSL certificates missing")
+        uvicorn.run(app, host="0.0.0.0", port=port, ssl_keyfile=key_file, ssl_certfile=cert_file)
     else:
-        logger.warning("Let's Encrypt path not found; using default certificates")
-
-    os.makedirs("certs", exist_ok=True)
-    if not (os.path.exists(cert_file) and os.path.exists(key_file)):
-        logger.error("No valid certificates found; please generate or provide certificates")
-        raise RuntimeError("SSL certificates missing")
-
-    # Create HTTPS server
-    server_address = ("0.0.0.0", 8000)
-    httpd = socketserver.TCPServer(server_address, FastAPIHandler)
-    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ssl_context.load_cert_chain(certfile=cert_file, keyfile=key_file)
-    httpd.socket = ssl_context.wrap_socket(httpd.socket, server_side=True)
-
-    logger.info("Starting HTTPS server on port 8000")
-    httpd.serve_forever()
+        uvicorn.run(app, host="0.0.0.0", port=port)
