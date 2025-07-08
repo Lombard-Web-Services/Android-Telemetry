@@ -271,7 +271,7 @@ Below is an example of the telemetry data structure stored in `telemetry.db`:
 
 ## License
 
-![Creative Commons BY-NC-SA](https://github.com/Lombard-Web-Services/Android-Telemetry/blob/main/CC_BY-NC-SA.svg.png?raw=true)
+![Creative Commons BY-NC-SA](https://github.com/Lombard-Web-Services/Android-Telemetry/blob/main/CC_BY-NC-SA.png?raw=true)
 
 This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike (CC BY-NC-SA)** license.
 
