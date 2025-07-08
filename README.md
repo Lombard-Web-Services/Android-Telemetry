@@ -14,7 +14,10 @@ This Python FastAPI interface securely transfers telemetry data from your Androi
 
 ## 📦 Setup Instructions
 
+
+
 ### 1️⃣ Prepare the Environment
+
 
 - Make sure you’re running **Ubuntu 20.04+** with **Python 3.8+**.
 - Install OpenSSL if it’s not already installed:
@@ -27,6 +30,7 @@ This Python FastAPI interface securely transfers telemetry data from your Androi
 
 
 ### 2️⃣ Install Dependencies
+
 
 The setup script will install required Python packages, but you can install them manually:
 
@@ -93,7 +97,6 @@ sudo systemctl enable telemetry.service
 ```
 
 
-
 ## ✅ Check the Status Endpoint
 
 Visit:
@@ -145,6 +148,8 @@ val credentials = Credentials.basic("admin", "your_secure_password")
 python3 setup_telemetry_service.py
 ```
 
+
+
 **Sample interaction:**
 
 ```text
@@ -158,6 +163,8 @@ Install as a systemd service? (y/n, default: n): y
 2025-07-06 17:06:07,012 - INFO - Telemetry service started
 Service installed and started. Check status with: sudo systemctl status telemetry.service
 ```
+
+
 
 **Check Status:**
 
@@ -174,7 +181,9 @@ sqlite3 telemetry.db "SELECT * FROM telemetry;"
 
 
 
+
 ## ⚡ Notes
+
 
 - **Production Certificates:**  
   Always prefer Let’s Encrypt for production to avoid browser warnings. Install Certbot and generate your certs:
@@ -204,7 +213,10 @@ sqlite3 telemetry.db "SELECT * FROM telemetry;"
 
 
 
+
 ## 📊 Example Telemetry Payload
+
+
 
 Below is an example of the telemetry data structure stored in `telemetry.db`:
 
@@ -255,6 +267,21 @@ Below is an example of the telemetry data structure stored in `telemetry.db`:
   }
 }
 ```
+
+
+## License
+
+![Creative Commons BY-NC-SA](https://github.com/Lombard-Web-Services/Android-Telemetry/blob/main/CC_BY-NC-SA.svg.png?raw=true)
+
+This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike (CC BY-NC-SA)** license.
+
+**What does it mean?**
+
+- **Attribution (BY)**: You must give appropriate credit, provide a link to the license, and indicate if changes were made.
+- **NonCommercial (NC)**: You may not use the material for commercial purposes.
+- **ShareAlike (SA)**: If you remix, transform, or build upon the material, you must distribute your contributions under the same license as the original.
+
+[Learn more about this license here](https://creativecommons.org/licenses/by-nc-sa/4.0/).
 
 
 
